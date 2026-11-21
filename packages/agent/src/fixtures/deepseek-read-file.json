@@ -1,0 +1,69 @@
+[
+  {
+    "id": "a7b7a001-ec5f-4ea3-829c-ce52280aa17e",
+    "object": "chat.completion",
+    "created": 1795267412,
+    "model": "deepseek-flash",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "I'll read the package.json file for you.",
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": "call_00_ph4gOuE5Yc2OpaLAoJpH9881",
+              "type": "function",
+              "function": {
+                "name": "read_file",
+                "arguments": "{\"path\": \"package.json\"}"
+              }
+            }
+          ]
+        },
+        "logprobs": null,
+        "finish_reason": "tool_calls"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 330,
+      "completion_tokens": 47,
+      "total_tokens": 377,
+      "prompt_tokens_details": {
+        "cached_tokens": 128
+      },
+      "prompt_cache_hit_tokens": 128,
+      "prompt_cache_miss_tokens": 202
+    },
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+  },
+  {
+    "id": "bf8d6322-c613-4296-922e-5b6e8d68ef7e",
+    "object": "chat.completion",
+    "created": 1795267414,
+    "model": "deepseek-flash",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "The project's name is **burrow**."
+        },
+        "logprobs": null,
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 531,
+      "completion_tokens": 9,
+      "total_tokens": 540,
+      "prompt_tokens_details": {
+        "cached_tokens": 256
+      },
+      "prompt_cache_hit_tokens": 256,
+      "prompt_cache_miss_tokens": 275
+    },
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+  }
+]

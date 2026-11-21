@@ -7,7 +7,7 @@ import type {
 import type { LLM, Message, StopReason, ToolDefinition } from "./llm.ts";
 import type { Pricing } from "./cost.ts";
 
-export type DeepSeekConfig = { apiKey: string; model: string };
+export type DeepSeekConfig = { apiKey: string; model: string; fetch?: typeof globalThis.fetch };
 
 // deepseek-flash, peak-hour prices in USD per million tokens (checked 2026-11-21).
 // Off-peak is half price, so using peak prices makes the budget guard err on the safe side.
@@ -65,8 +65,8 @@ const toStopReason = (reason: string): StopReason => {
   }
 };
 
-export const createDeepSeekLLM = ({ apiKey, model }: DeepSeekConfig): LLM => {
-  const client = new OpenAI({ apiKey, baseURL: "https://api.deepseek.com" });
+export const createDeepSeekLLM = ({ apiKey, model, fetch }: DeepSeekConfig): LLM => {
+  const client = new OpenAI({ apiKey, baseURL: "https://api.deepseek.com", fetch });
 
   return {
     async complete(messages, tools) {
