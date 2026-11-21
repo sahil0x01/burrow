@@ -12,9 +12,11 @@ import {
   writeFileTool,
 } from "@burrow/agent";
 import { createDeepSeekLLM, deepSeekFlashPricing } from "@burrow/agent/deepseek";
+import { createDockerSandbox } from "@burrow/agent/docker";
 import { printEvent } from "./print-event.ts";
 
-const usage = 'Usage: node --env-file=.env apps/cli/src/main.ts --dir <repo folder> "<task>"';
+const usage =
+  'Usage: node --env-file=.env apps/cli/src/main.ts --dir <repo folder> [--sandbox docker|local] "<task>"';
 
 const askYesNo = async (question: string): Promise<boolean> => {
   const prompt = createInterface({ input: stdin, output: stdout });
@@ -24,12 +26,16 @@ const askYesNo = async (question: string): Promise<boolean> => {
 };
 
 const { values, positionals } = parseArgs({
-  options: { dir: { type: "string" } },
+  options: {
+    dir: { type: "string" },
+    // Docker is the default: the agent's commands run in a throwaway container, not on this machine.
+    sandbox: { type: "string", default: "docker" },
+  },
   allowPositionals: true,
 });
 
 const task = positionals.join(" ").trim();
-if (!values.dir || !task) {
+if (!values.dir || !task || (values.sandbox !== "docker" && values.sandbox !== "local")) {
   console.error(usage);
   process.exit(2);
 }
@@ -49,8 +55,10 @@ if (!apiKey) {
 
 console.log(`Working in ${workdir}`);
 console.log(`Task: ${task}`);
+console.log(`Sandbox: ${values.sandbox}`);
 
-const sandbox = createLocalSandbox(workdir);
+const sandbox =
+  values.sandbox === "local" ? createLocalSandbox(workdir) : await createDockerSandbox({ workdir });
 
 try {
   const result = await runAgent({
