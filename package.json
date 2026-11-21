@@ -1,0 +1,21 @@
+{
+  "name": "burrow",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.21.0",
+      "onFail": "download"
+    },
+    "runtime": {
+      "name": "node",
+      "version": "24.22.3",
+      "onFail": "download"
+    }
+  }
+}

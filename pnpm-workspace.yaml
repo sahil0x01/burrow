@@ -1,0 +1,7 @@
+packages:
+  - apps/*
+  - packages/*
+
+catalog:
+  "@types/node": ^24
+  vite-plus: 1.4.0
