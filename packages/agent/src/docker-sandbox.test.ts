@@ -55,6 +55,14 @@ describe.skipIf(!dockerIsRunning)("createDockerSandbox", () => {
     expect(result).toMatchObject({ timedOut: true, output: "" });
   });
 
+  it("keeps memory bounded for endless output", async () => {
+    const result = await sandbox.exec("yes", 1_000);
+
+    expect(result.timedOut).toBe(true);
+    expect(result.output).toContain("bytes omitted");
+    expect(result.output.length).toBeLessThan(1_000_100);
+  });
+
   it("does not run as root", async () => {
     const result = await sandbox.exec("id -u", 10_000);
     expect(result.output.trim()).not.toBe("0");

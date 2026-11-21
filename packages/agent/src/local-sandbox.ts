@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { createOutputBuffer, DEFAULT_MAX_OUTPUT_BYTES } from "./output-buffer.ts";
 import type { CommandResult, Sandbox } from "./sandbox.ts";
 
 export const resolveInWorkdir = (workdir: string, path: string): string | undefined => {
@@ -12,7 +13,12 @@ export const resolveInWorkdir = (workdir: string, path: string): string | undefi
   return full;
 };
 
-export const runShell = (command: string, cwd: string, timeoutMs: number): Promise<CommandResult> =>
+export const runShell = (
+  command: string,
+  cwd: string,
+  timeoutMs: number,
+  maxOutputBytes = DEFAULT_MAX_OUTPUT_BYTES,
+): Promise<CommandResult> =>
   new Promise((resolve, reject) => {
     const child = spawn("/bin/sh", ["-c", command], {
       cwd,
@@ -20,15 +26,9 @@ export const runShell = (command: string, cwd: string, timeoutMs: number): Promi
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    let output = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      output += chunk;
-    });
-    child.stderr.on("data", (chunk: string) => {
-      output += chunk;
-    });
+    const output = createOutputBuffer(maxOutputBytes);
+    child.stdout.on("data", (chunk: Buffer) => output.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => output.push(chunk));
 
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -46,7 +46,7 @@ export const runShell = (command: string, cwd: string, timeoutMs: number): Promi
     });
     child.on("close", (exitCode) => {
       clearTimeout(timer);
-      resolve({ exitCode, timedOut, output });
+      resolve({ exitCode, timedOut, output: output.text() });
     });
   });
 

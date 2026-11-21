@@ -1,5 +1,7 @@
 import { PassThrough } from "node:stream";
 import Docker from "dockerode";
+import { createOutputBuffer, DEFAULT_MAX_OUTPUT_BYTES } from "./output-buffer.ts";
+import type { OutputBuffer } from "./output-buffer.ts";
 import type { CommandResult, Sandbox } from "./sandbox.ts";
 
 export type DockerSandboxOptions = {
@@ -7,6 +9,7 @@ export type DockerSandboxOptions = {
   image?: string;
   memoryMb?: number;
   cpus?: number;
+  maxOutputBytes?: number;
   docker?: Docker;
 };
 
@@ -30,10 +33,11 @@ const ensureImage = async (docker: Docker, image: string): Promise<void> => {
 
 // Runs one process inside the container and collects its output.
 // stdout and stderr are kept separately and also interleaved in arrival order.
+// Without `maxBytes` everything is kept, which file reads need.
 const execIn = async (
   container: Docker.Container,
   cmd: string[],
-  stdin?: string,
+  { stdin, maxBytes = Number.MAX_SAFE_INTEGER }: { stdin?: string; maxBytes?: number } = {},
 ): Promise<ExecOutput> => {
   const exec = await container.exec({
     Cmd: cmd,
@@ -44,10 +48,10 @@ const execIn = async (
   });
   const stream = await exec.start({ hijack: true, stdin: stdin !== undefined });
 
-  const stdout: Buffer[] = [];
-  const stderr: Buffer[] = [];
-  const combined: Buffer[] = [];
-  const collect = (target: Buffer[]) => {
+  const stdout = createOutputBuffer(maxBytes);
+  const stderr = createOutputBuffer(maxBytes);
+  const combined = createOutputBuffer(maxBytes);
+  const collect = (target: OutputBuffer) => {
     const sink = new PassThrough();
     sink.on("data", (chunk: Buffer) => {
       target.push(chunk);
@@ -65,12 +69,11 @@ const execIn = async (
   });
 
   const { ExitCode } = await exec.inspect();
-  const text = (chunks: Buffer[]) => Buffer.concat(chunks).toString("utf8");
   return {
     exitCode: ExitCode,
-    stdout: text(stdout),
-    stderr: text(stderr),
-    combined: text(combined),
+    stdout: stdout.text(),
+    stderr: stderr.text(),
+    combined: combined.text(),
   };
 };
 
@@ -115,22 +118,18 @@ export const createDockerSandbox = async (options: DockerSandboxOptions): Promis
 
     async writeFile(path, content) {
       const script = 'mkdir -p "$(dirname "$1")" && cat > "$1"';
-      const result = await execIn(container, ["sh", "-c", script, "sh", path], content);
+      const result = await execIn(container, ["sh", "-c", script, "sh", path], { stdin: content });
       if (result.exitCode !== 0) throw new Error(result.stderr.trim() || `Cannot write ${path}`);
     },
 
     async exec(command, timeoutMs): Promise<CommandResult> {
       const started = Date.now();
       const seconds = String(timeoutMs / 1000);
-      const result = await execIn(container, [
-        "timeout",
-        "-s",
-        "KILL",
-        seconds,
-        "sh",
-        "-c",
-        command,
-      ]);
+      const result = await execIn(
+        container,
+        ["timeout", "-s", "KILL", seconds, "sh", "-c", command],
+        { maxBytes: options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES },
+      );
       // `timeout` kills the command's whole process group and exits with 137 (128 + SIGKILL).
       const timedOut = result.exitCode === 137 && Date.now() - started >= timeoutMs;
       return { exitCode: result.exitCode, timedOut, output: result.combined };
