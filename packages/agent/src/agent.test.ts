@@ -148,6 +148,51 @@ describe("runAgent", () => {
     expect(events.filter((event) => event.type === "tool_call")).toHaveLength(2);
   });
 
+  it("does not run the 3rd identical call in a row and tells the model why", async () => {
+    const call = { id: "call_1", name: "echo", arguments: '{"text":"again"}' };
+    const { llm, requests } = scriptedLLM([
+      toolReply(call),
+      toolReply(call),
+      toolReply(call),
+      stopReply("Ok, trying something else."),
+    ]);
+
+    await run(llm);
+
+    expect(requests[2]?.at(-1)).toMatchObject({ content: "echo: again" });
+    expect(requests[3]?.at(-1)).toMatchObject({
+      content: expect.stringContaining("3 times in a row, so it was not run again"),
+    });
+  });
+
+  it("stops the run on the 5th identical call in a row", async () => {
+    const call = { id: "call_1", name: "echo", arguments: '{"text":"again"}' };
+    const { llm } = scriptedLLM(Array.from({ length: 10 }, () => toolReply(call)));
+
+    expect(await run(llm)).toEqual({
+      outcome: "failed",
+      reason: "Stuck repeating the same echo call",
+      steps: 5,
+      costUsd: 5,
+    });
+  });
+
+  it("starts counting again after a different call", async () => {
+    const same = { id: "call_1", name: "echo", arguments: '{"text":"again"}' };
+    const other = { id: "call_2", name: "echo", arguments: '{"text":"something else"}' };
+    const { llm, requests } = scriptedLLM([
+      toolReply(same),
+      toolReply(same),
+      toolReply(other),
+      toolReply(same),
+      stopReply("Done."),
+    ]);
+
+    await run(llm);
+
+    expect(requests[4]?.at(-1)).toMatchObject({ content: "echo: again" });
+  });
+
   it("emits events in order", async () => {
     const { llm } = scriptedLLM([
       toolReply({ id: "call_1", name: "echo", arguments: '{"text":"hi"}' }),

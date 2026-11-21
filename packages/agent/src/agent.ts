@@ -38,6 +38,11 @@ export type AgentOptions = {
   now?: () => number;
 };
 
+// The same tool call many times in a row means the model is stuck. On the 3rd repeat we
+// skip it and tell the model why; on the 5th we stop the run.
+const NUDGE_AFTER_REPEATS = 3;
+const STOP_AFTER_REPEATS = 5;
+
 export const runAgent = async (options: AgentOptions): Promise<AgentResult> => {
   const result = await runLoop(options);
   options.onEvent?.({ type: "done", result });
@@ -60,6 +65,8 @@ const runLoop = async (options: AgentOptions): Promise<AgentResult> => {
   ];
 
   let costUsd = 0;
+  let lastSignature = "";
+  let repeats = 0;
 
   for (let step = 1; step <= maxSteps; step++) {
     const completion = await llm.complete(messages, definitions);
@@ -105,11 +112,25 @@ const runLoop = async (options: AgentOptions): Promise<AgentResult> => {
           return { outcome: "failed", reason, steps: step, costUsd };
         }
         for (const call of completion.message.toolCalls) {
+          // Same tool and same arguments as the call just before it.
+          const signature = `${call.name}\n${call.arguments}`;
+          repeats = signature === lastSignature ? repeats + 1 : 1;
+          lastSignature = signature;
+          if (repeats >= STOP_AFTER_REPEATS) {
+            const reason = `Stuck repeating the same ${call.name} call`;
+            return { outcome: "failed", reason, steps: step, costUsd };
+          }
+
           emit({ type: "tool_call", step, call });
           const tool = toolsByName.get(call.name);
-          const result = tool
-            ? await tool.execute(call.arguments, context)
-            : fail(`Unknown tool: ${call.name}`);
+          const result =
+            repeats >= NUDGE_AFTER_REPEATS
+              ? fail(
+                  `You made this exact ${call.name} call ${repeats} times in a row, so it was not run again. Nothing has changed since the last one. Try something different.`,
+                )
+              : tool
+                ? await tool.execute(call.arguments, context)
+                : fail(`Unknown tool: ${call.name}`);
           emit({ type: "tool_result", step, toolCallId: call.id, result });
           messages.push({ role: "tool", toolCallId: call.id, content: result.output });
         }
