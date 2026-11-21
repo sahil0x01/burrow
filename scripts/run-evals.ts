@@ -1,6 +1,7 @@
 import { cp, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseArgs } from "node:util";
 import * as z from "zod";
 import {
   CODING_AGENT_SYSTEM_PROMPT,
@@ -11,6 +12,7 @@ import {
   writeFileTool,
 } from "@burrow/agent";
 import { createDeepSeekLLM, deepSeekFlashPricing } from "@burrow/agent/deepseek";
+import { createDockerSandbox } from "@burrow/agent/docker";
 
 // Nobody is at the keyboard during evals, so only these exact commands are approved.
 const ALLOWED_COMMANDS = new Set(["npm test", "node --test", "ls", "ls -la", "ls -R"]);
@@ -32,6 +34,15 @@ type TaskReport = {
   workdir: string;
 };
 
+// Evals run in Docker by default, the same way the CLI does, so they measure what ships.
+const { values } = parseArgs({
+  options: { sandbox: { type: "string", default: "docker" } },
+});
+if (values.sandbox !== "docker" && values.sandbox !== "local") {
+  throw new Error(`--sandbox must be "docker" or "local", got "${values.sandbox}"`);
+}
+const sandboxKind = values.sandbox;
+
 const apiKey = process.env.DEEPSEEK_API_KEY;
 if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not set");
 const llm = createDeepSeekLLM({ apiKey, model: "deepseek-flash" });
@@ -40,7 +51,8 @@ const runTask = async (task: Task): Promise<TaskReport> => {
   const fixtureDir = join("fixtures", task.name);
   const workdir = await mkdtemp(join(tmpdir(), `burrow-eval-${task.name}-`));
   await cp(fixtureDir, workdir, { recursive: true });
-  const sandbox = createLocalSandbox(workdir);
+  const sandbox =
+    sandboxKind === "local" ? createLocalSandbox(workdir) : await createDockerSandbox({ workdir });
 
   try {
     const started = Date.now();
@@ -99,6 +111,7 @@ console.table(
 
 const passed = reports.filter((report) => report.passed).length;
 const totalCost = reports.reduce((sum, report) => sum + report.costUsd, 0);
+console.log(`Sandbox: ${sandboxKind}`);
 console.log(`Passed ${passed}/${reports.length} · total cost $${totalCost.toFixed(5)}`);
 console.log("Work folders (inspect what the agent did):");
 for (const report of reports) console.log(`  ${report.task}: ${report.workdir}`);
