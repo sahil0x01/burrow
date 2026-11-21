@@ -8,6 +8,7 @@
     "./deepseek": "./src/deepseek.ts"
   },
   "dependencies": {
-    "openai": "^7.62.0"
+    "openai": "^7.62.0",
+    "zod": "^4.6.7"
   }
 }
