@@ -12,15 +12,15 @@ Every step follows the same loop:
 
 1. **Concept**: the idea in plain words (e.g. what is tool calling, what is a lease).
 2. **Options**: 2–3 ways to do it, with tradeoffs.
-3. **Decision**: what we pick and why, now. Recorded as a short ADR in `docs/adr/NNNN-title.md`.
+3. **Decision**: what we pick and why, now. Only significant, non-obvious decisions (data model, queue, durability, security, auth) get a short ADR in `docs/adr/NNNN-title.md`; routine setup and tooling choices do not.
 4. **Code**: you write it with me. I explain it line by line when it is new or tricky.
 5. **Break it**: we deliberately trigger the failure the design is meant to handle.
 6. **Test**: unit or integration test, plus a manual demo.
-7. **Interview card**: 3–5 questions you should now be able to answer. Saved in `docs/interview-notes.md`.
+7. **Interview card**: 3–5 questions you should now be able to answer, only for substantial concepts (skip basics). Saved in `docs/notes.md`, which is private (git-ignored, never committed).
 
 **Working agreement:** Claude explains and provides the code. **You type it yourself**, create and edit files, run commands, and do all git commits and pushes. Claude does not write project files or run git. When something breaks, you paste the error and we debug together.
 
-**Definition of done for any milestone:** demo works, tests pass, ADR written, you can explain the design without looking at the code.
+**Definition of done for any milestone:** demo works, tests pass, ADRs written for any significant decisions, you can explain the design without looking at the code.
 
 ---
 
@@ -119,7 +119,6 @@ Time estimates are part-time (about 8–10 h/week) and rough.
 - Node 24 LTS pinned, pnpm workspace + Vite+ (`vp`) for check/test/build/task running, strict tsconfig. Next.js keeps its own bundler, so Vite+ covers lint/format/test/tasks for it (verify when we get there). Postgres waits until M3, when we first need it
 - CI: GitHub Actions running `vp check` and tests on every push
 - Concepts: how LLM tool calling works on the wire (OpenAI-style `tool_calls` with JSON-string arguments and `role: "tool"` results), stop reasons, tokens, context window, prompt caching
-- ADR 0001: monorepo and stack
 - **Demo:** a 30-line script that makes one tool call by hand
 
 ### M1: Walking skeleton (1 week)
@@ -293,7 +292,7 @@ Time estimates are part-time (about 8–10 h/week) and rough.
 
 1. **Walking skeleton first, depth later.** Resist polishing a subsystem before it is connected end to end.
 2. **Measure before improving.** From M6 on, agent changes need an eval run behind them. The harness comes before the agent improvements so the baseline exists.
-3. **Every design choice gets a one-paragraph ADR.** This becomes your interview material and your README.
+3. **Significant design choices get a one-paragraph ADR.** Basic setup and tooling choices do not. ADRs become your interview material and your README.
 4. **Fake the edges in tests.** LLM and sandbox sit behind interfaces so the loop is testable without paying for tokens.
 5. **Budget guard from day one.** A hard per-run step and cost cap (from M1) prevents surprise API bills.
 6. **No scaffolding ahead of need.** No empty folders, placeholder files, stub packages, or unused config. A file or folder is created in the step that first needs it, and the target layout in section 3 is a destination, not a starting point.
