@@ -111,6 +111,16 @@ const runLoop = async (options: AgentOptions): Promise<AgentResult> => {
           const reason = `Reached the time limit (${maxWallTimeMs / 1000} s)`;
           return { outcome: "failed", reason, steps: step, costUsd };
         }
+        // The model said it would call tools but sent none. Without this message the next
+        // request would look the same as this one, and the model would likely do it again.
+        if (completion.message.toolCalls.length === 0) {
+          messages.push({
+            role: "user",
+            content: "Your reply had no tool calls. Call a tool, or reply with your final answer.",
+          });
+          break;
+        }
+
         for (const call of completion.message.toolCalls) {
           // Same tool and same arguments as the call just before it.
           const signature = `${call.name}\n${call.arguments}`;
@@ -130,7 +140,9 @@ const runLoop = async (options: AgentOptions): Promise<AgentResult> => {
                 )
               : tool
                 ? await tool.execute(call.arguments, context)
-                : fail(`Unknown tool: ${call.name}`);
+                : fail(
+                    `Unknown tool: ${call.name}. Available tools: ${[...toolsByName.keys()].join(", ")}`,
+                  );
           emit({ type: "tool_result", step, toolCallId: call.id, result });
           messages.push({ role: "tool", toolCallId: call.id, content: result.output });
         }

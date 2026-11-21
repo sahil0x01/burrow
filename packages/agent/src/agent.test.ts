@@ -93,7 +93,17 @@ describe("runAgent", () => {
     expect(requests[1]?.at(-1)).toEqual({
       role: "tool",
       toolCallId: "call_1",
-      content: "Unknown tool: delete_everything",
+      content: "Unknown tool: delete_everything. Available tools: echo",
+    });
+  });
+
+  it("tells the model when it says it will call tools but sends none", async () => {
+    const { llm, requests } = scriptedLLM([toolReply(), stopReply("Done.")]);
+
+    expect(await run(llm)).toMatchObject({ outcome: "done", steps: 2 });
+    expect(requests[1]?.at(-1)).toEqual({
+      role: "user",
+      content: "Your reply had no tool calls. Call a tool, or reply with your final answer.",
     });
   });
 

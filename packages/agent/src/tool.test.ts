@@ -26,6 +26,21 @@ describe("defineTool", () => {
     expect(result.output).toContain("not valid JSON");
   });
 
+  it("shows only part of very long malformed JSON", async () => {
+    const broken = `{"text":"${"x".repeat(5_000)}`;
+    const result = await echo.execute(broken, context);
+    expect(result.status).toBe("error");
+    expect(result.output.length).toBeLessThan(700);
+    expect(result.output).toContain("characters omitted");
+  });
+
+  it('treats empty arguments as "{}" so the schema explains what is missing', async () => {
+    const result = await echo.execute("", context);
+    expect(result.status).toBe("error");
+    expect(result.output).toContain("Invalid arguments");
+    expect(result.output).toContain("text");
+  });
+
   it("returns an error result for arguments that fail the schema", async () => {
     const result = await echo.execute('{"text":42}', context);
     expect(result.status).toBe("error");

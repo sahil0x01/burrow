@@ -1,6 +1,7 @@
 import * as z from "zod";
 import type { ToolDefinition } from "./llm.ts";
 import type { Sandbox } from "./sandbox.ts";
+import { truncateMiddle } from "./truncate.ts";
 
 export type ToolContext = { sandbox: Sandbox };
 
@@ -30,9 +31,11 @@ export const defineTool = <Schema extends z.ZodType>(spec: ToolSpec<Schema>): To
   async execute(rawArguments, context) {
     let json: unknown;
     try {
-      json = JSON.parse(rawArguments);
+      // Some models send "" instead of "{}" when they pass no arguments.
+      json = JSON.parse(rawArguments.trim() === "" ? "{}" : rawArguments);
     } catch {
-      return fail(`Arguments are not valid JSON: ${rawArguments}`);
+      // Show only part of it: broken arguments are often a whole file the model tried to write.
+      return fail(`Arguments are not valid JSON: ${truncateMiddle(rawArguments, 500)}`);
     }
 
     const parsed = spec.schema.safeParse(json);
