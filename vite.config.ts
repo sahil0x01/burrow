@@ -1,4 +1,4 @@
-import { defineConfig } from "vite-plus";
+import { configDefaults, defineConfig } from "vite-plus";
 
 export default defineConfig({
   fmt: {},
@@ -9,5 +9,9 @@ export default defineConfig({
   },
   run: {
     cache: true,
+  },
+  test: {
+    // Fixture repos are test material for the agent, with their own (failing) tests.
+    exclude: [...configDefaults.exclude, "fixtures/**"],
   },
 });
