@@ -1,0 +1,17 @@
+[
+  {
+    "name": "leap-year",
+    "prompt": "Make the failing test pass.",
+    "check": "node --test"
+  },
+  {
+    "name": "fizzbuzz",
+    "prompt": "Implement the fizzbuzz function so that all tests pass.",
+    "check": "node --test"
+  },
+  {
+    "name": "cart-total",
+    "prompt": "The cart total is wrong when a discount is applied. Fix the bug so that all tests pass.",
+    "check": "node --test"
+  }
+]
