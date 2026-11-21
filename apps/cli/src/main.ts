@@ -5,6 +5,7 @@ import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import {
   CODING_AGENT_SYSTEM_PROMPT,
+  createLocalSandbox,
   createRunCommandTool,
   readFileTool,
   runAgent,
@@ -49,20 +50,25 @@ if (!apiKey) {
 console.log(`Working in ${workdir}`);
 console.log(`Task: ${task}`);
 
-const result = await runAgent({
-  llm: createDeepSeekLLM({ apiKey, model: "deepseek-flash" }),
-  tools: [
-    readFileTool,
-    writeFileTool,
-    createRunCommandTool({ approve: (command) => askYesNo(`\n  run \`${command}\`? [y/N] `) }),
-  ],
-  context: { workdir },
-  systemPrompt: CODING_AGENT_SYSTEM_PROMPT,
-  task,
-  maxSteps: 30,
-  pricing: deepSeekFlashPricing,
-  maxCostUsd: 0.05,
-  onEvent: printEvent,
-});
+const sandbox = createLocalSandbox(workdir);
 
-process.exitCode = result.outcome === "done" ? 0 : 1;
+try {
+  const result = await runAgent({
+    llm: createDeepSeekLLM({ apiKey, model: "deepseek-flash" }),
+    tools: [
+      readFileTool,
+      writeFileTool,
+      createRunCommandTool({ approve: (command) => askYesNo(`\n  run \`${command}\`? [y/N] `) }),
+    ],
+    context: { sandbox },
+    systemPrompt: CODING_AGENT_SYSTEM_PROMPT,
+    task,
+    maxSteps: 30,
+    pricing: deepSeekFlashPricing,
+    maxCostUsd: 0.05,
+    onEvent: printEvent,
+  });
+  process.exitCode = result.outcome === "done" ? 0 : 1;
+} finally {
+  await sandbox.destroy();
+}

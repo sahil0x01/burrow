@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { readFileTool, runAgent } from "@burrow/agent";
+import { createLocalSandbox, readFileTool, runAgent } from "@burrow/agent";
 import { createDeepSeekLLM, deepSeekFlashPricing } from "@burrow/agent/deepseek";
 
 const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -17,7 +17,7 @@ const recordingFetch: typeof fetch = async (input, init) => {
 const result = await runAgent({
   llm: createDeepSeekLLM({ apiKey, model: "deepseek-flash", fetch: recordingFetch }),
   tools: [readFileTool],
-  context: { workdir: process.cwd() },
+  context: { sandbox: createLocalSandbox(process.cwd()) },
   systemPrompt: "You are a coding assistant. Read files before answering questions about them.",
   task: "Read package.json and tell me the project's name.",
   maxSteps: 5,

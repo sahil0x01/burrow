@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { describe, expect, it } from "vite-plus/test";
+import { createLocalSandbox } from "./local-sandbox.ts";
 import { defineTool, ok } from "./tool.ts";
 
 const echo = defineTool({
@@ -12,7 +13,7 @@ const echo = defineTool({
   },
 });
 
-const context = { workdir: "/unused" };
+const context = { sandbox: createLocalSandbox("/unused") };
 
 describe("defineTool", () => {
   it("runs the tool with parsed arguments", async () => {

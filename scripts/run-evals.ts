@@ -4,10 +4,10 @@ import { join } from "node:path";
 import * as z from "zod";
 import {
   CODING_AGENT_SYSTEM_PROMPT,
+  createLocalSandbox,
   createRunCommandTool,
   readFileTool,
   runAgent,
-  runShell,
   writeFileTool,
 } from "@burrow/agent";
 import { createDeepSeekLLM, deepSeekFlashPricing } from "@burrow/agent/deepseek";
@@ -40,37 +40,42 @@ const runTask = async (task: Task): Promise<TaskReport> => {
   const fixtureDir = join("fixtures", task.name);
   const workdir = await mkdtemp(join(tmpdir(), `burrow-eval-${task.name}-`));
   await cp(fixtureDir, workdir, { recursive: true });
+  const sandbox = createLocalSandbox(workdir);
 
-  const started = Date.now();
-  const result = await runAgent({
-    llm,
-    tools: [
-      readFileTool,
-      writeFileTool,
-      createRunCommandTool({ approve: async (command) => ALLOWED_COMMANDS.has(command.trim()) }),
-    ],
-    context: { workdir },
-    systemPrompt: CODING_AGENT_SYSTEM_PROMPT,
-    task: task.prompt,
-    maxSteps: 20,
-    pricing: deepSeekFlashPricing,
-    maxCostUsd: 0.05,
-  });
-  const seconds = (Date.now() - started) / 1000;
+  try {
+    const started = Date.now();
+    const result = await runAgent({
+      llm,
+      tools: [
+        readFileTool,
+        writeFileTool,
+        createRunCommandTool({ approve: async (command) => ALLOWED_COMMANDS.has(command.trim()) }),
+      ],
+      context: { sandbox },
+      systemPrompt: CODING_AGENT_SYSTEM_PROMPT,
+      task: task.prompt,
+      maxSteps: 20,
+      pricing: deepSeekFlashPricing,
+      maxCostUsd: 0.05,
+    });
+    const seconds = (Date.now() - started) / 1000;
 
-  // Put the original tests back, so an agent cannot "pass" by editing the tests.
-  await cp(join(fixtureDir, "test"), join(workdir, "test"), { recursive: true, force: true });
-  const check = await runShell(task.check, workdir, 60_000);
+    // Put the original tests back, so an agent cannot "pass" by editing the tests.
+    await cp(join(fixtureDir, "test"), join(workdir, "test"), { recursive: true, force: true });
+    const check = await sandbox.exec(task.check, 60_000);
 
-  return {
-    task: task.name,
-    passed: check.exitCode === 0,
-    outcome: result.outcome === "done" ? "done" : result.reason,
-    steps: result.steps,
-    costUsd: result.costUsd,
-    seconds,
-    workdir,
-  };
+    return {
+      task: task.name,
+      passed: check.exitCode === 0,
+      outcome: result.outcome === "done" ? "done" : result.reason,
+      steps: result.steps,
+      costUsd: result.costUsd,
+      seconds,
+      workdir,
+    };
+  } finally {
+    await sandbox.destroy();
+  }
 };
 
 const tasks = z.array(TaskSchema).parse(JSON.parse(await readFile("fixtures/tasks.json", "utf8")));

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { runAgent } from "./agent.ts";
 import type { AgentEvent, AgentOptions } from "./agent.ts";
 import type { Completion, LLM, Message, ToolCall } from "./llm.ts";
+import { createLocalSandbox } from "./local-sandbox.ts";
 import { defineTool, ok } from "./tool.ts";
 
 // Every scripted reply "uses" one million input tokens. With the pricing below,
@@ -48,7 +49,7 @@ const run = (llm: LLM, overrides: Partial<AgentOptions> = {}) =>
   runAgent({
     llm,
     tools: [echoTool],
-    context: { workdir: "/unused" },
+    context: { sandbox: createLocalSandbox("/unused") },
     systemPrompt: "You are a test agent.",
     task: "Do the thing.",
     maxSteps: 10,

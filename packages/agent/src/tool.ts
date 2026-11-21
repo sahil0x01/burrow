@@ -1,7 +1,8 @@
 import * as z from "zod";
 import type { ToolDefinition } from "./llm.ts";
+import type { Sandbox } from "./sandbox.ts";
 
-export type ToolContext = { workdir: string };
+export type ToolContext = { sandbox: Sandbox };
 
 export type ToolResult = { status: "ok" | "error"; output: string };
 
