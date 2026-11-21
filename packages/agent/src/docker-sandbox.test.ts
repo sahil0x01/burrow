@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Docker from "dockerode";
@@ -67,8 +67,17 @@ describe.skipIf(!dockerIsRunning)("createDockerSandbox", () => {
     expect(result.exitCode).toBe(1);
   });
 
-  it("cannot see files outside the shared folder", async () => {
-    const result = await sandbox.exec(`ls ${tmpdir()}`, 10_000);
-    expect(result.exitCode).not.toBe(0);
+  it("cannot read host files outside the shared folder", async () => {
+    // A real file on this machine, next to (not inside) the shared folder.
+    const secretDir = await mkdtemp(join(tmpdir(), "burrow-secret-"));
+    const secretPath = join(secretDir, "secret.txt");
+    await writeFile(secretPath, "do not leak");
+
+    try {
+      await expect(sandbox.readFile(secretPath)).rejects.toThrow("No such file");
+      expect((await sandbox.exec(`cat ${secretPath}`, 10_000)).exitCode).not.toBe(0);
+    } finally {
+      await rm(secretDir, { recursive: true, force: true });
+    }
   });
 });
