@@ -5,3 +5,11 @@ packages:
 catalog:
   "@types/node": ^24
   vite-plus: 1.4.0
+
+# Install scripts run third-party code on this machine, so each one must be decided explicitly.
+# These come with dockerode and only add optional native extras (SSH transport, BuildKit).
+# We reach Docker over its local socket, so none of them are needed.
+allowBuilds:
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
