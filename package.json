@@ -5,7 +5,8 @@
   "devDependencies": {
     "@burrow/agent": "workspace:*",
     "@types/node": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "zod": "^4.6.7"
   },
   "devEngines": {
     "packageManager": {

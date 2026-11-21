@@ -3,14 +3,15 @@ import { resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
-import { createRunCommandTool, readFileTool, runAgent, writeFileTool } from "@burrow/agent";
+import {
+  CODING_AGENT_SYSTEM_PROMPT,
+  createRunCommandTool,
+  readFileTool,
+  runAgent,
+  writeFileTool,
+} from "@burrow/agent";
 import { createDeepSeekLLM, deepSeekFlashPricing } from "@burrow/agent/deepseek";
 import { printEvent } from "./print-event.ts";
-
-const SYSTEM_PROMPT = `You are a coding agent working inside a software repository.
-Use the tools to read files, edit files and run commands such as the test suite.
-After changing code, run the tests to check your work.
-When you are finished, reply with a short summary of what you changed and why.`;
 
 const usage = 'Usage: node --env-file=.env apps/cli/src/main.ts --dir <repo folder> "<task>"';
 
@@ -56,7 +57,7 @@ const result = await runAgent({
     createRunCommandTool({ approve: (command) => askYesNo(`\n  run \`${command}\`? [y/N] `) }),
   ],
   context: { workdir },
-  systemPrompt: SYSTEM_PROMPT,
+  systemPrompt: CODING_AGENT_SYSTEM_PROMPT,
   task,
   maxSteps: 30,
   pricing: deepSeekFlashPricing,

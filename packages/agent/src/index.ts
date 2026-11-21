@@ -11,9 +11,10 @@ export type {
 export { defineTool, fail, ok } from "./tool.ts";
 export type { Tool, ToolContext, ToolResult } from "./tool.ts";
 export { readFileTool, writeFileTool } from "./tools/file-tools.ts";
-export { createRunCommandTool } from "./tools/run-command.ts";
-export type { ApproveCommand, RunCommandOptions } from "./tools/run-command.ts";
+export { createRunCommandTool, runShell } from "./tools/run-command.ts";
+export type { ApproveCommand, CommandResult, RunCommandOptions } from "./tools/run-command.ts";
 export { runAgent } from "./agent.ts";
 export type { AgentEvent, AgentOptions, AgentResult } from "./agent.ts";
 export { costOf } from "./cost.ts";
 export type { Pricing } from "./cost.ts";
+export { CODING_AGENT_SYSTEM_PROMPT } from "./prompts.ts";

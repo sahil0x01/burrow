@@ -18,7 +18,7 @@ Every step follows the same loop:
 6. **Test**: unit or integration test, plus a manual demo.
 7. **Interview card**: 3–5 questions you should now be able to answer, only for substantial concepts (skip basics). Saved in `docs/notes.md`, which is private (git-ignored, never committed).
 
-**Working agreement:** Claude explains and provides the code. **You type it yourself**, create and edit files, run commands, and do all git commits and pushes. Claude does not write project files or run git. When something breaks, you paste the error and we debug together.
+**Working agreement:** Until M1 step 7a you typed all the code yourself. Since then (2026-11-21), Claude edits the code directly, runs the checks and tests, and explains every change with snippets, diagrams and line-by-line notes. You review the diff, run anything that costs money or needs your input (DeepSeek runs, y/N prompts), and do the git commits and pushes.
 
 **Definition of done for any milestone:** demo works, tests pass, ADRs written for any significant decisions, you can explain the design without looking at the code.
 
