@@ -23,6 +23,7 @@ const result = await runAgent({
   maxSteps: 5,
   pricing: deepSeekFlashPricing,
   maxCostUsd: 0.01,
+  maxWallTimeMs: 60_000,
 });
 
 const path = "packages/agent/src/fixtures/deepseek-read-file.json";

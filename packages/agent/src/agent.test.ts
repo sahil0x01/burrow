@@ -55,6 +55,7 @@ const run = (llm: LLM, overrides: Partial<AgentOptions> = {}) =>
     maxSteps: 10,
     pricing,
     maxCostUsd: 100,
+    maxWallTimeMs: 60_000,
     ...overrides,
   });
 
@@ -125,6 +126,26 @@ describe("runAgent", () => {
       costUsd: 2,
     });
     expect(events.filter((event) => event.type === "tool_call")).toHaveLength(1);
+  });
+
+  it("stops at the time limit before running more tools", async () => {
+    const call = { id: "call_1", name: "echo", arguments: '{"text":"again"}' };
+    const { llm } = scriptedLLM(Array.from({ length: 10 }, () => toolReply(call)));
+    // A fake clock: every time the agent looks at it, 10 seconds have passed.
+    // Start reads 10 s; checks after steps 1, 2, 3 see 10 s, 20 s, 30 s elapsed.
+    let time = 0;
+    const now = () => (time += 10_000);
+    const events: AgentEvent[] = [];
+
+    const result = await run(llm, { maxWallTimeMs: 25_000, now, onEvent: (e) => events.push(e) });
+
+    expect(result).toEqual({
+      outcome: "failed",
+      reason: "Reached the time limit (25 s)",
+      steps: 3,
+      costUsd: 3,
+    });
+    expect(events.filter((event) => event.type === "tool_call")).toHaveLength(2);
   });
 
   it("emits events in order", async () => {

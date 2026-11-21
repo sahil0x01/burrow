@@ -30,7 +30,12 @@ export type AgentOptions = {
   maxSteps: number;
   pricing: Pricing;
   maxCostUsd: number;
+  // Checked between steps, so one model call and its commands (each with its own timeout)
+  // can run past it. It stops a run that keeps going, not a single slow command.
+  maxWallTimeMs: number;
   onEvent?: (event: AgentEvent) => void;
+  // The clock, so tests can control time. Defaults to Date.now.
+  now?: () => number;
 };
 
 export const runAgent = async (options: AgentOptions): Promise<AgentResult> => {
@@ -40,8 +45,11 @@ export const runAgent = async (options: AgentOptions): Promise<AgentResult> => {
 };
 
 const runLoop = async (options: AgentOptions): Promise<AgentResult> => {
-  const { llm, tools, context, systemPrompt, task, maxSteps, pricing, maxCostUsd } = options;
+  const { llm, tools, context, systemPrompt, task, maxSteps, pricing, maxCostUsd, maxWallTimeMs } =
+    options;
   const emit = options.onEvent ?? (() => {});
+  const now = options.now ?? Date.now;
+  const started = now();
 
   const toolsByName = new Map(tools.map((tool) => [tool.definition.name, tool]));
   const definitions = tools.map((tool) => tool.definition);
@@ -90,6 +98,10 @@ const runLoop = async (options: AgentOptions): Promise<AgentResult> => {
       case "tool_calls":
         if (costUsd >= maxCostUsd) {
           const reason = `Reached the cost limit ($${maxCostUsd})`;
+          return { outcome: "failed", reason, steps: step, costUsd };
+        }
+        if (now() - started >= maxWallTimeMs) {
+          const reason = `Reached the time limit (${maxWallTimeMs / 1000} s)`;
           return { outcome: "failed", reason, steps: step, costUsd };
         }
         for (const call of completion.message.toolCalls) {

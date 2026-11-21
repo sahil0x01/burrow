@@ -69,6 +69,7 @@ const runTask = async (task: Task): Promise<TaskReport> => {
       maxSteps: 20,
       pricing: deepSeekFlashPricing,
       maxCostUsd: 0.05,
+      maxWallTimeMs: 5 * 60_000,
     });
     const seconds = (Date.now() - started) / 1000;
 

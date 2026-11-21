@@ -74,6 +74,7 @@ try {
     maxSteps: 30,
     pricing: deepSeekFlashPricing,
     maxCostUsd: 0.05,
+    maxWallTimeMs: 10 * 60_000,
     onEvent: printEvent,
   });
   process.exitCode = result.outcome === "done" ? 0 : 1;
