@@ -1,59 +1,23 @@
 import { readFile } from "node:fs/promises";
-
-type ToolCall = {
-  id: string;
-  type: "function";
-  function: { name: string; arguments: string };
-};
-
-type Message =
-  | { role: "system" | "user"; content: string }
-  | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
-  | { role: "tool"; tool_call_id: string; content: string };
-
-type ChatResponse = {
-  choices: {
-    message: Extract<Message, { role: "assistant" }>;
-    finish_reason: string;
-  }[];
-  usage: { prompt_tokens: number; completion_tokens: number };
-};
+import type { Message, ToolDefinition } from "@burrow/agent";
+import { createDeepSeekLLM } from "@burrow/agent/deepseek";
 
 const apiKey = process.env.DEEPSEEK_API_KEY;
 if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not set");
 
-const tools = [
+const llm = createDeepSeekLLM({ apiKey, model: "deepseek-flash" });
+
+const tools: ToolDefinition[] = [
   {
-    type: "function",
-    function: {
-      name: "read_file",
-      description: "Read a UTF-8 text file. The path is relative to the project root.",
-      parameters: {
-        type: "object",
-        properties: { path: { type: "string" } },
-        required: ["path"],
-      },
+    name: "read_file",
+    description: "Read a UTF-8 text file. The path is relative to the project root.",
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
     },
   },
 ];
-
-const chat = async (messages: Message[]): Promise<ChatResponse> => {
-  const res = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-flash",
-      thinking: { type: "disabled" },
-      messages,
-      tools,
-    }),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-  return (await res.json()) as ChatResponse;
-};
 
 const runReadFile = async (rawArgs: string): Promise<string> => {
   try {
@@ -77,19 +41,20 @@ const messages: Message[] = [
   },
 ];
 
-const first = await chat(messages);
-const reply = first.choices[0];
-if (!reply) throw new Error("Response had no choices");
-console.log("1st finish_reason:", reply.finish_reason);
-console.dir(reply.message.tool_calls, { depth: null });
-messages.push(reply.message);
+const first = await llm.complete(messages, tools);
+console.log("1st stop reason:", first.stopReason);
+console.dir(first.message.toolCalls, { depth: null });
+messages.push(first.message);
 
-for (const call of reply.message.tool_calls ?? []) {
-  const result = await runReadFile(call.function.arguments);
-  messages.push({ role: "tool", tool_call_id: call.id, content: result });
+for (const call of first.message.toolCalls) {
+  messages.push({
+    role: "tool",
+    toolCallId: call.id,
+    content: await runReadFile(call.arguments),
+  });
 }
 
-const second = await chat(messages);
-console.log("2nd finish_reason:", second.choices[0]?.finish_reason);
-console.log(second.choices[0]?.message.content);
+const second = await llm.complete(messages, tools);
+console.log("2nd stop reason:", second.stopReason);
+console.log(second.message.content);
 console.log("usage:", first.usage, second.usage);

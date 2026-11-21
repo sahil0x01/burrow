@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
+    "@burrow/agent": "workspace:*",
     "@types/node": "catalog:",
     "vite-plus": "catalog:"
   },
