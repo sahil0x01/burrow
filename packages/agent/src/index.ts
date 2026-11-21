@@ -15,3 +15,5 @@ export { createRunCommandTool } from "./tools/run-command.ts";
 export type { ApproveCommand, RunCommandOptions } from "./tools/run-command.ts";
 export { runAgent } from "./agent.ts";
 export type { AgentOptions, AgentResult } from "./agent.ts";
+export { costOf } from "./cost.ts";
+export type { Pricing } from "./cost.ts";

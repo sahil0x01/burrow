@@ -5,8 +5,17 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import type { LLM, Message, StopReason, ToolDefinition } from "./llm.ts";
+import type { Pricing } from "./cost.ts";
 
 export type DeepSeekConfig = { apiKey: string; model: string };
+
+// deepseek-flash, peak-hour prices in USD per million tokens (checked 2026-11-21).
+// Off-peak is half price, so using peak prices makes the budget guard err on the safe side.
+export const deepSeekFlashPricing: Pricing = {
+  inputPerMillion: 0.3,
+  cachedInputPerMillion: 0.006,
+  outputPerMillion: 1.2,
+};
 
 const toWireMessage = (message: Message): ChatCompletionMessageParam => {
   switch (message.role) {
