@@ -50,6 +50,17 @@ describe("run_command", () => {
     expect(result.output).toContain("timed out after 100 ms");
   });
 
+  it("cuts long output in the middle", async () => {
+    const tool = createRunCommandTool({ approve: approveAll, maxOutputChars: 20 });
+    const command = "echo START; seq 1 200; echo END";
+    const result = await tool.execute(JSON.stringify({ command }), context);
+
+    expect(result.status).toBe("ok");
+    expect(result.output).toMatch(
+      /^Exit code: 0\nSTART\n.*\n\[\.\.\. \d+ characters omitted \.\.\.\]\n.*END\n$/s,
+    );
+  });
+
   it("does not run the command when the user declines", async () => {
     const tool = createRunCommandTool({ approve: async () => false });
     const result = await tool.execute(JSON.stringify({ command: "touch created.txt" }), context);
