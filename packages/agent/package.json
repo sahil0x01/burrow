@@ -5,10 +5,15 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./deepseek": "./src/deepseek.ts"
+    "./deepseek": "./src/deepseek.ts",
+    "./docker": "./src/docker-sandbox.ts"
   },
   "dependencies": {
+    "dockerode": "^5.0.1",
     "openai": "^7.62.0",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^4.0.2"
   }
 }
