@@ -76,6 +76,9 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("event store", () => {
     const run = await newRun();
 
     await appendEvent(db, run.id, { type: "step", data: {} });
+    expect((await getRun(db, run.id))?.status).toBe("queued");
+
+    await appendEvent(db, run.id, { type: "started", data: {} }, { status: "running" });
     expect((await getRun(db, run.id))?.status).toBe("running");
 
     await appendEvent(db, run.id, { type: "done", data: {} }, { status: "succeeded" });

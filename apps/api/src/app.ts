@@ -1,19 +1,15 @@
-import { createRun, getRepo, getRun, listEventsAfter, type Db } from "@burrow/db";
+import { getRepo, getRun, listEventsAfter, queueRun, type Db } from "@burrow/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import type { ExecuteRun } from "./run-executor.ts";
 
 export type AppOptions = {
   db: Db;
   // Every request must send `Authorization: Bearer <apiKey>`.
   apiKey: string;
-  // Starts the work for a new run. Called without waiting: POST /runs answers right away,
-  // and the client follows progress on GET /runs/:id/events.
-  executeRun: ExecuteRun;
   // How often an open event stream checks the database for new events. Default 500 ms.
   pollIntervalMs?: number;
 };
@@ -25,7 +21,7 @@ const createRunBody = z.object({
 
 const runParams = z.object({ id: z.uuid() });
 
-export function createApp({ db, apiKey, executeRun, pollIntervalMs = 500 }: AppOptions) {
+export function createApp({ db, apiKey, pollIntervalMs = 500 }: AppOptions) {
   const app = new Hono();
 
   // Compares keys in constant time, so response timing does not leak how much of a guess matched.
@@ -42,10 +38,9 @@ export function createApp({ db, apiKey, executeRun, pollIntervalMs = 500 }: AppO
       if (!repo) {
         return c.json({ error: `Repo not found: ${repoId}` }, 404);
       }
-      const run = await createRun(db, { repoId, task });
-      // In-process on purpose for M3: if this server stops, the run stops with it (M4 fixes
-      // that with a queue and workers). executeRun never throws, so nothing goes unhandled.
-      void executeRun(run, repo);
+      // Only records the run and its job; a worker process picks it up. The client follows
+      // progress on GET /runs/:id/events.
+      const run = await queueRun(db, { repoId, task });
       return c.json(run, 201);
     },
   );
@@ -67,7 +62,8 @@ export function createApp({ db, apiKey, executeRun, pollIntervalMs = 500 }: AppO
 
   // Streams a run's events as Server-Sent Events, each with `id: <seq>`. A client that
   // reconnects sends `Last-Event-ID: <seq>` and gets only the events after it.
-  // The stream ends once the run has finished and every event has been sent.
+  // The stream ends once the run has finished and every event has been sent; a queued run
+  // (waiting for a worker, or for a retry) keeps it open.
   app.get(
     "/runs/:id/events",
     zValidator("param", runParams, (result, c) =>
@@ -90,7 +86,8 @@ export function createApp({ db, apiKey, executeRun, pollIntervalMs = 500 }: AppO
           // Read the status BEFORE the events. The final event and the final status are
           // written in one transaction, so if we already see the run as finished, the
           // events read next are sure to include its last one.
-          const finished = (await getRun(db, runId))?.status !== "running";
+          const status = (await getRun(db, runId))?.status;
+          const finished = status === "succeeded" || status === "failed";
 
           for (const event of await listEventsAfter(db, runId, lastSeq)) {
             await stream.writeSSE({

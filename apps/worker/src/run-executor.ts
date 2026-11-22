@@ -24,14 +24,17 @@ export type RunExecutorOptions = {
   workspacesDir: string;
 };
 
-export type ExecuteRun = (run: Run, repo: Repo) => Promise<void>;
+// `attempt` is 1 for the first try, 2 for the first retry, and so on.
+export type ExecuteRun = (run: Run, repo: Repo, attempt: number) => Promise<void>;
 
-// Runs the agent for a run and records everything it does as events. Never throws: any
-// failure becomes a `run_error` event and the run is marked failed.
+// Runs the agent for a run and records everything it does as events. The agent's own
+// outcome (done, or stopped by a limit) ends the run with its final status. Anything that
+// crashes the attempt (the copy, the model API, the database) is thrown, after all earlier
+// events are written, so the worker can decide whether to retry.
 export function createRunExecutor(options: RunExecutorOptions): ExecuteRun {
   const { db, llm, pricing, createSandbox, workspacesDir } = options;
 
-  return async (run, repo) => {
+  return async (run, repo, attempt) => {
     // The agent emits events without waiting, but appendEvent is async. Chaining every write
     // onto the previous one keeps them in the order they happened. The chain itself never
     // rejects (a rejection nobody awaits yet would crash the whole server); the first failed
@@ -56,10 +59,11 @@ export function createRunExecutor(options: RunExecutorOptions): ExecuteRun {
 
     let sandbox: Sandbox | undefined;
     try {
-      // A copy, so the registered folder is never changed and two runs never share files.
-      const workdir = join(workspacesDir, run.id);
+      // A fresh copy per attempt, so the registered folder is never changed, two runs never
+      // share files, and a retry does not start from a half-finished attempt.
+      const workdir = join(workspacesDir, run.id, `attempt-${attempt}`);
       await cp(repo.path, workdir, { recursive: true, errorOnExist: true, force: false });
-      record("run_started", { workdir });
+      record("run_started", { attempt, workdir }, "running");
       await flush();
 
       sandbox = await createSandbox(workdir);
@@ -91,18 +95,10 @@ export function createRunExecutor(options: RunExecutorOptions): ExecuteRun {
       });
       await flush();
     } catch (error) {
-      // Wait for earlier writes (this never rejects), so run_error is the last event. It is
-      // written directly: if the database is what failed, this may fail too; then we can only log.
+      // Let earlier writes finish first (this never rejects), so whatever the worker records
+      // about this failure comes after them.
       await writes;
-      const message = error instanceof Error ? error.message : String(error);
-      await appendEvent(
-        db,
-        run.id,
-        { type: "run_error", data: { message } },
-        { status: "failed" },
-      ).catch((recordError: unknown) => {
-        console.error(`Could not record the failure of run ${run.id}:`, recordError);
-      });
+      throw error;
     } finally {
       await sandbox?.destroy().catch((destroyError: unknown) => {
         console.error(`Could not destroy the sandbox of run ${run.id}:`, destroyError);

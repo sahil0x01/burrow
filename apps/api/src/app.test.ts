@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendEvent, createDb, createRepo, createRun } from "@burrow/db";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { createApp } from "./app.ts";
 
 // Uses the real Postgres, like the event store tests: skipped locally when it is not
@@ -13,9 +13,7 @@ const postgresIsRunning = await db.$client
 
 const apiKey = "test-key";
 // Fast polling, so the live-stream test does not wait half a second per check.
-// executeRun is a spy: these tests check the HTTP layer, run-executor.test.ts checks runs.
-const executeRun = vi.fn(async () => {});
-const app = createApp({ db, apiKey, executeRun, pollIntervalMs: 20 });
+const app = createApp({ db, apiKey, pollIntervalMs: 20 });
 
 function request(
   path: string,
@@ -52,6 +50,11 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("api", () => {
   });
 
   afterAll(async () => {
+    // Jobs do not reference runs with a foreign key, so delete them by their key.
+    await db.$client.query(
+      "delete from jobs where key in (select 'run:' || id from runs where repo_id = $1)",
+      [repoId],
+    );
     await db.$client.query("delete from runs where repo_id = $1", [repoId]);
     await db.$client.query("delete from repos where id = $1", [repoId]);
     await db.$client.end();
@@ -62,19 +65,20 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("api", () => {
     expect((await request("/runs/x", { key: "wrong" })).status).toBe(401);
   });
 
-  it("creates a run and reads it back", async () => {
+  it("queues a run with its job and reads it back", async () => {
     const created = await request("/runs", {
       method: "POST",
       body: JSON.stringify({ repoId, task: "  Fix the tests  " }),
     });
     expect(created.status).toBe(201);
     const run = (await created.json()) as { id: string };
-    expect(run).toMatchObject({ repoId, task: "Fix the tests", status: "running" });
+    expect(run).toMatchObject({ repoId, task: "Fix the tests", status: "queued" });
 
-    expect(executeRun).toHaveBeenCalledWith(
-      expect.objectContaining({ id: run.id }),
-      expect.objectContaining({ id: repoId }),
+    const { rows: jobs } = await db.$client.query(
+      "select type, payload, status from jobs where key = $1",
+      [`run:${run.id}`],
     );
+    expect(jobs).toEqual([{ type: "run", payload: { runId: run.id }, status: "queued" }]);
 
     const fetched = await request(`/runs/${run.id}`);
     expect(fetched.status).toBe(200);
@@ -135,11 +139,12 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("api", () => {
       expect(await readEvents(res)).toEqual([["3", "done", { i: 3 }]]);
     });
 
-    it("streams events of a running run as they are written", async () => {
+    it("streams events of an unfinished run as they are written", async () => {
+      // Still queued: the stream stays open until the run succeeds or fails.
       const run = await createRun(db, { repoId, task: "x" });
-      await appendEvent(db, run.id, { type: "step", data: { i: 1 } });
+      await appendEvent(db, run.id, { type: "step", data: { i: 1 } }, { status: "running" });
 
-      // The stream stays open while the run is running, so start reading before it finishes.
+      // Start reading before the run finishes.
       const events = Promise.resolve(request(`/runs/${run.id}/events`)).then(readEvents);
       await new Promise((resolve) => setTimeout(resolve, 100));
       await appendEvent(db, run.id, { type: "step", data: { i: 2 } });

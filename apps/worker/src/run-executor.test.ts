@@ -57,7 +57,7 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("run executor", () => {
       workspacesDir: join(tempDir, "workspaces"),
     });
 
-  it("records every agent event and marks the run succeeded", async () => {
+  it("records every agent event and marks the run running, then succeeded", async () => {
     const run = await createRun(db, { repoId: repo.id, task: "Change the README." });
     const llm = scriptedLLM([
       {
@@ -82,7 +82,7 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("run executor", () => {
       },
     ]);
 
-    await execute(llm)(run, repo);
+    await execute(llm)(run, repo, 1);
 
     const events = await listEventsAfter(db, run.id, 0);
     expect(events.map((e) => e.type)).toEqual([
@@ -98,22 +98,22 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("run executor", () => {
     expect((await getRun(db, run.id))?.status).toBe("succeeded");
 
     // The agent changed its own copy; the registered folder is untouched.
-    const workdir = join(tempDir, "workspaces", run.id);
-    expect(events[0]?.data).toEqual({ workdir });
+    const workdir = join(tempDir, "workspaces", run.id, "attempt-1");
+    expect(events[0]?.data).toEqual({ attempt: 1, workdir });
     expect(await readFile(join(workdir, "README.md"), "utf8")).toBe("changed");
     expect(await readFile(join(repo.path, "README.md"), "utf8")).toBe("original");
   });
 
-  it("records a crash as run_error and marks the run failed", async () => {
+  it("throws a crash to the caller after writing the events before it", async () => {
     const run = await createRun(db, { repoId: repo.id, task: "Anything." });
 
-    await execute(scriptedLLM([]))(run, repo);
+    await expect(execute(scriptedLLM([]))(run, repo, 2)).rejects.toThrow("The model API is down");
 
+    // The worker decides what happens next (retry or fail), so the run is still running here.
     const events = await listEventsAfter(db, run.id, 0);
     expect(events.map((e) => [e.type, e.data])).toEqual([
-      ["run_started", { workdir: join(tempDir, "workspaces", run.id) }],
-      ["run_error", { message: "The model API is down" }],
+      ["run_started", { attempt: 2, workdir: join(tempDir, "workspaces", run.id, "attempt-2") }],
     ]);
-    expect((await getRun(db, run.id))?.status).toBe("failed");
+    expect((await getRun(db, run.id))?.status).toBe("running");
   });
 });
