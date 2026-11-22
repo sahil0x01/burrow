@@ -7,3 +7,4 @@ export {
   type StoredEvent,
 } from "./event-store.ts";
 export { createRepo, createRun, getRepo, getRun, type Repo, type Run } from "./runs.ts";
+export { claimJob, completeJob, enqueueJob, failJob, type DbOrTx, type Job } from "./queue.ts";
