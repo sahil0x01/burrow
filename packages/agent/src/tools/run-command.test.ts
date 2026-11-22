@@ -71,12 +71,26 @@ describe("run_command", () => {
 
 describe("allowOnly", () => {
   it("approves exact matches only", async () => {
-    const approve = allowOnly(["npm test", "ls"]);
+    const { approve } = allowOnly(["npm test", "ls"]);
 
     expect(await approve("npm test")).toBe(true);
     expect(await approve("  ls \n")).toBe(true);
     expect(await approve("npm test; rm -rf .")).toBe(false);
     expect(await approve("npm  test")).toBe(false);
     expect(await approve("cat /etc/passwd")).toBe(false);
+  });
+
+  it("tells the model which commands it may run instead", async () => {
+    const tool = createRunCommandTool(allowOnly(["npm test", "ls"]));
+
+    const refused = await tool.execute(JSON.stringify({ command: "ls -la && pwd" }), context);
+    const allowed = await tool.execute(JSON.stringify({ command: "ls" }), context);
+
+    expect(refused).toEqual({
+      status: "error",
+      output:
+        "This command is not allowed. Only these exact commands can run, with nothing added or chained: `npm test`, `ls`. Run one of them as written, or keep going with the file tools.",
+    });
+    expect(allowed.status).toBe("ok");
   });
 });

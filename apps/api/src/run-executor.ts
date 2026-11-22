@@ -68,7 +68,7 @@ export function createRunExecutor(options: RunExecutorOptions): ExecuteRun {
         tools: [
           readFileTool,
           writeFileTool,
-          createRunCommandTool({ approve: allowOnly(AUTO_APPROVED_COMMANDS) }),
+          createRunCommandTool(allowOnly(AUTO_APPROVED_COMMANDS)),
         ],
         context: { sandbox },
         systemPrompt: CODING_AGENT_SYSTEM_PROMPT,

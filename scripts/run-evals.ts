@@ -61,7 +61,7 @@ const runTask = async (task: Task): Promise<TaskReport> => {
         readFileTool,
         writeFileTool,
         // Nobody is at the keyboard during evals, so only exact safe commands are approved.
-        createRunCommandTool({ approve: allowOnly(AUTO_APPROVED_COMMANDS) }),
+        createRunCommandTool(allowOnly(AUTO_APPROVED_COMMANDS)),
       ],
       context: { sandbox },
       systemPrompt: CODING_AGENT_SYSTEM_PROMPT,
