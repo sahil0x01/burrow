@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@burrow/agent": "workspace:*",
     "@burrow/db": "workspace:*",
     "@hono/node-server": "^2.1.11",
     "@hono/zod-validator": "^0.9.1",

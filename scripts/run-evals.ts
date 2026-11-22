@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import * as z from "zod";
 import {
+  AUTO_APPROVED_COMMANDS,
+  allowOnly,
   CODING_AGENT_SYSTEM_PROMPT,
   createLocalSandbox,
   createRunCommandTool,
@@ -13,9 +15,6 @@ import {
 } from "@burrow/agent";
 import { createDeepSeekLLM, deepSeekFlashPricing } from "@burrow/agent/deepseek";
 import { createDockerSandbox } from "@burrow/agent/docker";
-
-// Nobody is at the keyboard during evals, so only these exact commands are approved.
-const ALLOWED_COMMANDS = new Set(["npm test", "node --test", "ls", "ls -la", "ls -R"]);
 
 const TaskSchema = z.object({
   name: z.string().min(1),
@@ -61,7 +60,8 @@ const runTask = async (task: Task): Promise<TaskReport> => {
       tools: [
         readFileTool,
         writeFileTool,
-        createRunCommandTool({ approve: async (command) => ALLOWED_COMMANDS.has(command.trim()) }),
+        // Nobody is at the keyboard during evals, so only exact safe commands are approved.
+        createRunCommandTool({ approve: allowOnly(AUTO_APPROVED_COMMANDS) }),
       ],
       context: { sandbox },
       systemPrompt: CODING_AGENT_SYSTEM_PROMPT,

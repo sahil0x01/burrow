@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendEvent, createDb, createRepo, createRun } from "@burrow/db";
-import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { createApp } from "./app.ts";
 
 // Uses the real Postgres, like the event store tests: skipped locally when it is not
@@ -13,7 +13,9 @@ const postgresIsRunning = await db.$client
 
 const apiKey = "test-key";
 // Fast polling, so the live-stream test does not wait half a second per check.
-const app = createApp({ db, apiKey, pollIntervalMs: 20 });
+// executeRun is a spy: these tests check the HTTP layer, run-executor.test.ts checks runs.
+const executeRun = vi.fn(async () => {});
+const app = createApp({ db, apiKey, executeRun, pollIntervalMs: 20 });
 
 function request(
   path: string,
@@ -68,6 +70,11 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("api", () => {
     expect(created.status).toBe(201);
     const run = (await created.json()) as { id: string };
     expect(run).toMatchObject({ repoId, task: "Fix the tests", status: "running" });
+
+    expect(executeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ id: run.id }),
+      expect.objectContaining({ id: repoId }),
+    );
 
     const fetched = await request(`/runs/${run.id}`);
     expect(fetched.status).toBe(200);

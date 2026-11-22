@@ -5,6 +5,16 @@ import { truncateMiddle } from "../truncate.ts";
 
 export type ApproveCommand = (command: string) => Promise<boolean>;
 
+// Commands that are safe to run when nobody is there to answer y/N (evals, API runs) until
+// real approval gates arrive in M11: they only list files or run the repo's tests.
+export const AUTO_APPROVED_COMMANDS = ["npm test", "node --test", "ls", "ls -la", "ls -R"];
+
+// Approves only exact matches (after trimming), so `npm test; rm -rf .` is refused.
+export const allowOnly = (commands: readonly string[]): ApproveCommand => {
+  const allowed = new Set(commands);
+  return async (command) => allowed.has(command.trim());
+};
+
 export type RunCommandOptions = {
   approve: ApproveCommand;
   timeoutMs?: number;

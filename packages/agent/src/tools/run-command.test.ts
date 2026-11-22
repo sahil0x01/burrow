@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createLocalSandbox } from "../local-sandbox.ts";
 import type { ToolContext } from "../tool.ts";
-import { createRunCommandTool } from "./run-command.ts";
+import { allowOnly, createRunCommandTool } from "./run-command.ts";
 
 let workdir: string;
 let context: ToolContext;
@@ -66,5 +66,17 @@ describe("run_command", () => {
     const result = await tool.execute(JSON.stringify({ command: "touch created.txt" }), context);
     expect(result).toEqual({ status: "error", output: "The user declined to run this command." });
     expect(existsSync(join(workdir, "created.txt"))).toBe(false);
+  });
+});
+
+describe("allowOnly", () => {
+  it("approves exact matches only", async () => {
+    const approve = allowOnly(["npm test", "ls"]);
+
+    expect(await approve("npm test")).toBe(true);
+    expect(await approve("  ls \n")).toBe(true);
+    expect(await approve("npm test; rm -rf .")).toBe(false);
+    expect(await approve("npm  test")).toBe(false);
+    expect(await approve("cat /etc/passwd")).toBe(false);
   });
 });

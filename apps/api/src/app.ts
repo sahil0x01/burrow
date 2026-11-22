@@ -5,11 +5,15 @@ import { bearerAuth } from "hono/bearer-auth";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
+import type { ExecuteRun } from "./run-executor.ts";
 
 export type AppOptions = {
   db: Db;
   // Every request must send `Authorization: Bearer <apiKey>`.
   apiKey: string;
+  // Starts the work for a new run. Called without waiting: POST /runs answers right away,
+  // and the client follows progress on GET /runs/:id/events.
+  executeRun: ExecuteRun;
   // How often an open event stream checks the database for new events. Default 500 ms.
   pollIntervalMs?: number;
 };
@@ -21,7 +25,7 @@ const createRunBody = z.object({
 
 const runParams = z.object({ id: z.uuid() });
 
-export function createApp({ db, apiKey, pollIntervalMs = 500 }: AppOptions) {
+export function createApp({ db, apiKey, executeRun, pollIntervalMs = 500 }: AppOptions) {
   const app = new Hono();
 
   // Compares keys in constant time, so response timing does not leak how much of a guess matched.
@@ -34,10 +38,14 @@ export function createApp({ db, apiKey, pollIntervalMs = 500 }: AppOptions) {
     ),
     async (c) => {
       const { repoId, task } = c.req.valid("json");
-      if (!(await getRepo(db, repoId))) {
+      const repo = await getRepo(db, repoId);
+      if (!repo) {
         return c.json({ error: `Repo not found: ${repoId}` }, 404);
       }
       const run = await createRun(db, { repoId, task });
+      // In-process on purpose for M3: if this server stops, the run stops with it (M4 fixes
+      // that with a queue and workers). executeRun never throws, so nothing goes unhandled.
+      void executeRun(run, repo);
       return c.json(run, 201);
     },
   );
