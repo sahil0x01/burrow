@@ -1,0 +1,26 @@
+# Local development services. Start with `docker compose up -d --wait`.
+name: burrow
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      # Local-only credentials. The port below is bound to 127.0.0.1, so nothing outside
+      # this machine can connect. Deployed databases get real secrets (M5).
+      POSTGRES_USER: burrow
+      POSTGRES_PASSWORD: burrow
+      POSTGRES_DB: burrow
+    ports:
+      # 5433 on this machine, so it does not clash with another Postgres on the default 5432.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql/18/docker, so mount the parent.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U burrow -d burrow"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  postgres-data:
