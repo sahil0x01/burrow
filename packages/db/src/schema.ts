@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -28,7 +29,8 @@ export const repos = pgTable("repos", {
   createdAt: timestampColumn("created_at"),
 });
 
-export const runStatuses = ["running", "succeeded", "failed"] as const;
+// queued → running → succeeded | failed. A run waits as "queued" until a worker picks it up.
+export const runStatuses = ["queued", "running", "succeeded", "failed"] as const;
 
 // One row per run. `status` is a quick summary for listing runs; the events are the full story.
 export const runs = pgTable(
@@ -44,7 +46,10 @@ export const runs = pgTable(
     updatedAt: timestampColumn("updated_at"),
   },
   (table) => [
-    check("runs_status_check", sql`${table.status} in ('running', 'succeeded', 'failed')`),
+    check(
+      "runs_status_check",
+      sql`${table.status} in ('queued', 'running', 'succeeded', 'failed')`,
+    ),
   ],
 );
 
@@ -66,5 +71,50 @@ export const events = pgTable(
   (table) => [
     primaryKey({ columns: [table.runId, table.seq] }),
     check("events_seq_positive", sql`${table.seq} > 0`),
+  ],
+);
+
+export const jobStatuses = ["queued", "running", "succeeded", "failed"] as const;
+
+// Our queue. A job is a piece of work for a worker (for now: "execute run X"). Workers claim
+// queued jobs with SELECT … FOR UPDATE SKIP LOCKED, so two workers never take the same one.
+// Kept apart from `runs`: runs are what users see, jobs are how the work gets delivered.
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: id(),
+    type: text("type").notNull(),
+    // At most one job per key, e.g. "run:<run id>". Enqueueing the same key twice does
+    // nothing the second time, so a retried request cannot start the same work twice.
+    key: text("key").notNull().unique(),
+    payload: jsonb("payload").notNull(),
+    status: text("status", { enum: jobStatuses }).notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    // Not picked up before this time. A failed attempt pushes it later (backoff).
+    runAt: timestampColumn("run_at"),
+    // Which worker holds the job and since when; set only while it is running.
+    lockedBy: text("locked_by"),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestampColumn("created_at"),
+    updatedAt: timestampColumn("updated_at"),
+  },
+  (table) => [
+    check(
+      "jobs_status_check",
+      sql`${table.status} in ('queued', 'running', 'succeeded', 'failed')`,
+    ),
+    check("jobs_attempts_check", sql`${table.attempts} between 0 and ${table.maxAttempts}`),
+    check("jobs_max_attempts_positive", sql`${table.maxAttempts} > 0`),
+    // A running job always has an owner, and only a running job has one.
+    check(
+      "jobs_lock_check",
+      sql`(${table.status} = 'running') = (${table.lockedBy} is not null and ${table.lockedAt} is not null)`,
+    ),
+    // Workers only ever look for queued jobs that are due, so index just those rows.
+    index("jobs_due_idx")
+      .on(table.runAt)
+      .where(sql`${table.status} = 'queued'`),
   ],
 );
