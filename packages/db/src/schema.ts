@@ -11,6 +11,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
+import { runStatuses } from "./run-status.ts";
 
 // UUIDv7 starts with a timestamp, so ids sort by creation time.
 const id = () =>
@@ -29,9 +30,6 @@ export const repos = pgTable("repos", {
   createdAt: timestampColumn("created_at"),
 });
 
-// queued → running → succeeded | failed. A run waits as "queued" until a worker picks it up.
-export const runStatuses = ["queued", "running", "succeeded", "failed"] as const;
-
 // One row per run. `status` is a quick summary for listing runs; the events are the full story.
 export const runs = pgTable(
   "runs",
@@ -42,13 +40,16 @@ export const runs = pgTable(
       .references(() => repos.id),
     task: text("task").notNull(),
     status: text("status", { enum: runStatuses }).notNull(),
+    // Set by POST /runs/:id/cancel. A worker running this run checks it between agent steps.
+    cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
     createdAt: timestampColumn("created_at"),
     updatedAt: timestampColumn("updated_at"),
   },
   (table) => [
     check(
       "runs_status_check",
-      sql`${table.status} in ('queued', 'running', 'succeeded', 'failed')`,
+      // Built from runStatuses, so the list in code and the check in the database agree.
+      sql`${table.status} in (${sql.raw(runStatuses.map((status) => `'${status}'`).join(", "))})`,
     ),
   ],
 );

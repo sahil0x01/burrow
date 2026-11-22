@@ -6,6 +6,7 @@ import {
   failJob,
   getRepo,
   getRun,
+  isFinished,
   RUN_JOB_TYPE,
   type Db,
   type Job,
@@ -24,6 +25,8 @@ export type WorkerOptions = {
   pollIntervalMs?: number;
   // Delay before the first retry; it doubles after each failed attempt. Default 5 s.
   retryBaseDelayMs?: number;
+  // How often a running run is checked for a cancel request. Default 1 s.
+  cancelPollMs?: number;
   // Tests use their own job type, so they never take real queued runs.
   jobType?: string;
 };
@@ -58,25 +61,28 @@ async function processJob(options: WorkerOptions, job: Job): Promise<void> {
     runId = runJobPayload.parse(job.payload).runId;
     const run = await getRun(db, runId);
     if (!run) throw new Error(`Run not found: ${runId}`);
-
-    // Delivery is at least once: this job may already have finished its run (say the
-    // worker stopped right after the final event, before completing the job). Then there
-    // is nothing left to do, and running the agent again would be wrong.
-    if (run.status === "succeeded" || run.status === "failed") {
-      await completeJob(db, job.id, workerId);
-      return;
-    }
+    if (await settled(options, job, run.id)) return;
 
     const repo = await getRepo(db, run.repoId);
     if (!repo) throw new Error(`Repo not found: ${run.repoId}`);
 
     console.log(`[${workerId}] run ${run.id}: attempt ${job.attempts} started`);
-    await executeRun(run, repo, job.attempts);
+    const cancel = watchForCancel(options, run.id);
+    try {
+      await executeRun(run, repo, job.attempts, cancel.signal);
+    } finally {
+      cancel.stop();
+    }
     await completeJob(db, job.id, workerId);
     console.log(`[${workerId}] run ${run.id}: finished`);
   } catch (error) {
-    // The attempt crashed. Put the job back with a delay, or fail it if no attempts are left,
-    // and tell anyone watching the run what happened.
+    // The run may have been cancelled or finished while this attempt was crashing (for
+    // example, a cancel arrived just before the attempt marked the run running, and that
+    // status change was refused). Then there is nothing to retry.
+    if (runId && (await settled(options, job, runId))) return;
+
+    // Otherwise put the job back with a delay, or fail it if no attempts are left, and tell
+    // anyone watching the run what happened.
     const message = error instanceof Error ? error.message : String(error);
     const status = await failJob(db, job.id, workerId, message, {
       baseDelayMs: retryBaseDelayMs,
@@ -94,4 +100,44 @@ async function processJob(options: WorkerOptions, job: Job): Promise<void> {
       );
     }
   }
+}
+
+// If the run needs no (more) work, completes the job and returns true:
+// - it already finished: delivery is at least once, so this job may have run before (say the
+//   worker stopped right after the final event, before completing the job);
+// - a cancel was requested: mark it cancelled instead of starting or retrying it.
+async function settled(options: WorkerOptions, job: Job, runId: string): Promise<boolean> {
+  const { db, workerId } = options;
+  const run = await getRun(db, runId);
+  if (!run) return false;
+
+  if (!isFinished(run.status) && run.cancelRequestedAt !== null) {
+    await appendEvent(db, runId, { type: "cancelled", data: {} }, { status: "cancelled" });
+  } else if (!isFinished(run.status)) {
+    return false;
+  }
+  await completeJob(db, job.id, workerId);
+  console.log(
+    `[${workerId}] run ${runId}: nothing to do (${run.cancelRequestedAt ? "cancelled" : run.status})`,
+  );
+  return true;
+}
+
+// Checks the run every cancelPollMs while it executes, and aborts the signal once a cancel
+// has been requested. The agent sees it before its next step.
+function watchForCancel(options: WorkerOptions, runId: string) {
+  const { db, cancelPollMs = 1_000 } = options;
+  const cancel = new AbortController();
+  const done = new AbortController();
+
+  void (async () => {
+    while (!done.signal.aborted && !cancel.signal.aborted) {
+      await sleep(cancelPollMs, undefined, { signal: done.signal }).catch(() => {});
+      if (done.signal.aborted) return;
+      const run = await getRun(db, runId).catch(() => undefined);
+      if (run?.cancelRequestedAt) cancel.abort();
+    }
+  })();
+
+  return { signal: cancel.signal, stop: () => done.abort() };
 }

@@ -82,7 +82,7 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("run executor", () => {
       },
     ]);
 
-    await execute(llm)(run, repo, 1);
+    await execute(llm)(run, repo, 1, new AbortController().signal);
 
     const events = await listEventsAfter(db, run.id, 0);
     expect(events.map((e) => e.type)).toEqual([
@@ -107,7 +107,9 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("run executor", () => {
   it("throws a crash to the caller after writing the events before it", async () => {
     const run = await createRun(db, { repoId: repo.id, task: "Anything." });
 
-    await expect(execute(scriptedLLM([]))(run, repo, 2)).rejects.toThrow("The model API is down");
+    await expect(
+      execute(scriptedLLM([]))(run, repo, 2, new AbortController().signal),
+    ).rejects.toThrow("The model API is down");
 
     // The worker decides what happens next (retry or fail), so the run is still running here.
     const events = await listEventsAfter(db, run.id, 0);
@@ -115,5 +117,18 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("run executor", () => {
       ["run_started", { attempt: 2, workdir: join(tempDir, "workspaces", run.id, "attempt-2") }],
     ]);
     expect((await getRun(db, run.id))?.status).toBe("running");
+  });
+
+  it("ends the run as cancelled when the signal is aborted", async () => {
+    const run = await createRun(db, { repoId: repo.id, task: "Anything." });
+    const stop = new AbortController();
+    stop.abort();
+
+    await execute(scriptedLLM([]))(run, repo, 1, stop.signal);
+
+    const events = await listEventsAfter(db, run.id, 0);
+    expect(events.map((e) => e.type)).toEqual(["run_started", "done"]);
+    expect(events[1]?.data).toMatchObject({ result: { outcome: "cancelled", steps: 0 } });
+    expect((await getRun(db, run.id))?.status).toBe("cancelled");
   });
 });

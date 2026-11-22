@@ -48,7 +48,10 @@ export async function claimJob(
       lockedAt: sql`now()`,
       updatedAt: sql`now()`,
     })
-    .where(inArray(jobs.id, next))
+    // `id = (subquery)` makes Postgres pick (and lock) the job exactly once, as an InitPlan,
+    // whatever plan it chooses. With `id IN (subquery)` it may instead plan a join that runs
+    // the locking subquery again for every row it scans.
+    .where(eq(jobs.id, sql`(${next})`))
     .returning();
   return job;
 }

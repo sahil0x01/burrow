@@ -220,4 +220,23 @@ describe("runAgent", () => {
       "done",
     ]);
   });
+
+  it("stops before the next step when cancelled", async () => {
+    const stop = new AbortController();
+    const { llm, requests } = scriptedLLM([
+      toolReply({ id: "1", name: "echo", arguments: JSON.stringify({ text: "a" }) }),
+      stopReply("never reached"),
+    ]);
+
+    const result = await run(llm, {
+      signal: stop.signal,
+      // Cancel while the first step's tool call is being handled.
+      onEvent: (event) => {
+        if (event.type === "tool_result") stop.abort();
+      },
+    });
+
+    expect(result).toEqual({ outcome: "cancelled", reason: "Cancelled", steps: 1, costUsd: 1 });
+    expect(requests).toHaveLength(1);
+  });
 });

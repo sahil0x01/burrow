@@ -15,6 +15,13 @@
       "when": 1795329733151,
       "tag": "0001_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795331203433,
+      "tag": "0002_cancel",
+      "breakpoints": true
     }
   ]
 }

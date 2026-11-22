@@ -1,4 +1,12 @@
-import { getRepo, getRun, listEventsAfter, queueRun, type Db } from "@burrow/db";
+import {
+  getRepo,
+  getRun,
+  isFinished,
+  listEventsAfter,
+  queueRun,
+  requestCancel,
+  type Db,
+} from "@burrow/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
@@ -60,6 +68,28 @@ export function createApp({ db, apiKey, pollIntervalMs = 500 }: AppOptions) {
     },
   );
 
+  // Asks a run to stop. A queued run is cancelled at once (200). A running run stops before
+  // the agent's next step (202: accepted, not done yet); watch its events for the end.
+  app.post(
+    "/runs/:id/cancel",
+    zValidator("param", runParams, (result, c) =>
+      result.success ? undefined : c.json({ error: "Run not found" }, 404),
+    ),
+    async (c) => {
+      const result = await requestCancel(db, c.req.valid("param").id);
+      switch (result) {
+        case "not_found":
+          return c.json({ error: "Run not found" }, 404);
+        case "finished":
+          return c.json({ error: "Run already finished" }, 409);
+        case "cancelled":
+          return c.json({ result }, 200);
+        case "requested":
+          return c.json({ result }, 202);
+      }
+    },
+  );
+
   // Streams a run's events as Server-Sent Events, each with `id: <seq>`. A client that
   // reconnects sends `Last-Event-ID: <seq>` and gets only the events after it.
   // The stream ends once the run has finished and every event has been sent; a queued run
@@ -87,7 +117,7 @@ export function createApp({ db, apiKey, pollIntervalMs = 500 }: AppOptions) {
           // written in one transaction, so if we already see the run as finished, the
           // events read next are sure to include its last one.
           const status = (await getRun(db, runId))?.status;
-          const finished = status === "succeeded" || status === "failed";
+          const finished = status === undefined || isFinished(status);
 
           for (const event of await listEventsAfter(db, runId, lastSeq)) {
             await stream.writeSSE({

@@ -6,7 +6,8 @@ import type { Tool, ToolContext, ToolResult } from "./tool.ts";
 
 export type AgentResult =
   | { outcome: "done"; answer: string; steps: number; costUsd: number }
-  | { outcome: "failed"; reason: string; steps: number; costUsd: number };
+  | { outcome: "failed"; reason: string; steps: number; costUsd: number }
+  | { outcome: "cancelled"; reason: string; steps: number; costUsd: number };
 
 export type AgentEvent =
   | {
@@ -34,6 +35,9 @@ export type AgentOptions = {
   // can run past it. It stops a run that keeps going, not a single slow command.
   maxWallTimeMs: number;
   onEvent?: (event: AgentEvent) => void;
+  // When aborted, the run stops before its next step. A model call or command already in
+  // progress finishes first (each has its own timeout).
+  signal?: AbortSignal;
   // The clock, so tests can control time. Defaults to Date.now.
   now?: () => number;
 };
@@ -69,6 +73,9 @@ const runLoop = async (options: AgentOptions): Promise<AgentResult> => {
   let repeats = 0;
 
   for (let step = 1; step <= maxSteps; step++) {
+    if (options.signal?.aborted) {
+      return { outcome: "cancelled", reason: "Cancelled", steps: step - 1, costUsd };
+    }
     const completion = await llm.complete(messages, definitions);
     messages.push(completion.message);
     const callCostUsd = costOf(completion.usage, pricing);

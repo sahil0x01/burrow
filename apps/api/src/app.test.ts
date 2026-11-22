@@ -108,11 +108,13 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("api", () => {
     async function finishedRun(count: number) {
       const run = await createRun(db, { repoId, task: "x" });
       for (let i = 1; i <= count; i++) {
+        // Like a real run: the first event moves it to running, the last one finishes it.
+        const status = i === count ? "succeeded" : i === 1 ? "running" : undefined;
         await appendEvent(
           db,
           run.id,
           { type: i === count ? "done" : "step", data: { i } },
-          i === count ? { status: "succeeded" } : {},
+          status && { status },
         );
       }
       return run;
@@ -158,7 +160,7 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("api", () => {
     });
 
     it("rejects a Last-Event-ID that is not a whole number", async () => {
-      const run = await finishedRun(1);
+      const run = await finishedRun(2);
       for (const id of ["abc", "-1", "1.5"]) {
         const res = await request(`/runs/${run.id}/events`, { headers: { "Last-Event-ID": id } });
         expect(res.status).toBe(400);
@@ -167,6 +169,47 @@ describe.skipIf(!postgresIsRunning && !process.env.CI)("api", () => {
 
     it("returns 404 for a run that does not exist", async () => {
       expect((await request(`/runs/${randomUUID()}/events`)).status).toBe(404);
+    });
+  });
+
+  describe("POST /runs/:id/cancel", () => {
+    const cancel = (id: string) => request(`/runs/${id}/cancel`, { method: "POST" });
+
+    it("cancels a queued run with 200", async () => {
+      const run = await createRun(db, { repoId, task: "x" });
+
+      const res = await cancel(run.id);
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ result: "cancelled" });
+    });
+
+    it("asks a running run to stop with 202", async () => {
+      const run = await createRun(db, { repoId, task: "x" });
+      await appendEvent(db, run.id, { type: "run_started", data: {} }, { status: "running" });
+
+      const res = await cancel(run.id);
+
+      expect(res.status).toBe(202);
+      expect(await res.json()).toEqual({ result: "requested" });
+    });
+
+    it("returns 409 for a finished run and 404 for a missing one", async () => {
+      const run = await createRun(db, { repoId, task: "x" });
+      await cancel(run.id);
+
+      expect((await cancel(run.id)).status).toBe(409);
+      expect((await cancel(randomUUID())).status).toBe(404);
+      expect((await cancel("not-a-uuid")).status).toBe(404);
+    });
+
+    it("ends the event stream of a cancelled run", async () => {
+      const run = await createRun(db, { repoId, task: "x" });
+      await cancel(run.id);
+
+      const res = await request(`/runs/${run.id}/events`);
+
+      expect(await readEvents(res)).toEqual([["1", "cancelled", {}]]);
     });
   });
 });

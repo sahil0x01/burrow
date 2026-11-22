@@ -1,6 +1,8 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Db } from "./client.ts";
+import { appendToLockedRun, lockRun } from "./event-store.ts";
 import { enqueueJob, type DbOrTx } from "./queue.ts";
+import { isFinished } from "./run-status.ts";
 import { repos, runs } from "./schema.ts";
 
 export type Repo = typeof repos.$inferSelect;
@@ -48,4 +50,37 @@ export async function queueRun(db: Db, run: { repoId: string; task: string }): P
 export async function getRun(db: Db, id: string): Promise<Run | undefined> {
   const [row] = await db.select().from(runs).where(eq(runs.id, id));
   return row;
+}
+
+// What POST /runs/:id/cancel did:
+// - "cancelled": the run was waiting, so it is cancelled right away.
+// - "requested": a worker is running it; it will stop before the agent's next step.
+// - "finished": too late, it already ended. "not_found": no such run.
+export type CancelResult = "cancelled" | "requested" | "finished" | "not_found";
+
+export async function requestCancel(db: Db, runId: string): Promise<CancelResult> {
+  return db.transaction(async (tx) => {
+    // Holding the run's lock means no worker can start or finish it while we decide.
+    const run = await lockRun(tx, runId);
+    if (!run) return "not_found";
+    if (isFinished(run.status)) return "finished";
+
+    const alreadyRequested = run.cancelRequestedAt !== null;
+    await tx
+      .update(runs)
+      .set({ cancelRequestedAt: sql`coalesce(${runs.cancelRequestedAt}, now())` })
+      .where(eq(runs.id, runId));
+
+    if (run.status === "queued") {
+      // No agent is running it. A worker that claims its job later sees it is finished
+      // and just completes the job.
+      await appendToLockedRun(tx, runId, run.status, { type: "cancelled", data: {} }, "cancelled");
+      return "cancelled";
+    }
+    // Asking twice is fine; only the first request is recorded as an event.
+    if (!alreadyRequested) {
+      await appendToLockedRun(tx, runId, run.status, { type: "cancel_requested", data: {} });
+    }
+    return "requested";
+  });
 }
