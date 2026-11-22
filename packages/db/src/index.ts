@@ -6,4 +6,4 @@ export {
   type RunStatus,
   type StoredEvent,
 } from "./event-store.ts";
-export { createRepo, createRun, getRun, type Repo, type Run } from "./runs.ts";
+export { createRepo, createRun, getRepo, getRun, type Repo, type Run } from "./runs.ts";

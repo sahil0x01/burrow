@@ -11,6 +11,11 @@ export async function createRepo(db: Db, repo: { name: string; path: string }): 
   return row;
 }
 
+export async function getRepo(db: Db, id: string): Promise<Repo | undefined> {
+  const [row] = await db.select().from(repos).where(eq(repos.id, id));
+  return row;
+}
+
 // A new run starts as "running": in M3 runs start immediately (M4 adds a queue).
 export async function createRun(db: Db, run: { repoId: string; task: string }): Promise<Run> {
   const [row] = await db
